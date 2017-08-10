@@ -62,6 +62,8 @@ public class SocialAuthModule extends ReactContextBaseJavaModule implements Acti
 
     reactContext.addActivityEventListener(this);
 
+    FacebookSdk.sdkInitialize(reactContext.getApplicationContext());
+
     fbCallbackManager = CallbackManager.Factory.create();
 
     LoginManager.getInstance().registerCallback(fbCallbackManager, new FacebookCallback<LoginResult>() {

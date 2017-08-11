@@ -4,6 +4,7 @@ import android.accounts.AccountManager;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Bundle;
 import android.util.Log;
 
 import com.facebook.AccessToken;
@@ -12,6 +13,8 @@ import com.facebook.FacebookAuthorizationException;
 import com.facebook.FacebookCallback;
 import com.facebook.FacebookException;
 import com.facebook.FacebookSdk;
+import com.facebook.GraphRequest;
+import com.facebook.GraphResponse;
 import com.facebook.login.LoginManager;
 import com.facebook.login.LoginResult;
 
@@ -31,6 +34,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.json.JSONObject;
 
 public class SocialAuthModule extends ReactContextBaseJavaModule implements ActivityEventListener {
 
@@ -69,7 +74,7 @@ public class SocialAuthModule extends ReactContextBaseJavaModule implements Acti
     LoginManager.getInstance().registerCallback(fbCallbackManager, new FacebookCallback<LoginResult>() {
       @Override
       public void onSuccess(LoginResult loginResult) {
-        WritableMap map = Arguments.createMap();
+        final WritableMap map = Arguments.createMap();
 
         if (fbRequestedPermissionsType.equals("write") && !AccessToken.getCurrentAccessToken().getPermissions().contains("publish_actions")) {
           map.putInt("code", -2);
@@ -85,7 +90,38 @@ public class SocialAuthModule extends ReactContextBaseJavaModule implements Acti
         map.putString("accessToken", AccessToken.getCurrentAccessToken().getToken());
         map.putBoolean("hasWritePermissions", AccessToken.getCurrentAccessToken().getPermissions().contains("publish_actions"));
 
-        fbRNCallback.invoke(null, map);
+        final GraphRequest request = GraphRequest.newMeRequest(loginResult.getAccessToken(), new GraphRequest.GraphJSONObjectCallback() {
+          @Override
+          public void onCompleted(JSONObject object, GraphResponse response) {
+            try {
+              Log.e("id", "" + object);
+              if (object.has("id")) {
+                final String userId = object.optString("id");
+                final String userPicture = "https://graph.facebook.com/" + object.optString("id") + "/picture?type=large";
+                map.putString("id", userId);
+                map.putString("photo", userPicture);
+              }
+              if (object.has("name")) {
+                final String userName = object.optString("name");
+                map.putString("name", userName);
+              }
+              if (object.has("email")) {
+                final String userEmail = object.optString("email");
+                map.putString("email", userEmail);
+                Log.e("useremail", userEmail);
+              }
+
+              fbRNCallback.invoke(null, map);
+            } catch (Exception e) {
+              e.printStackTrace();
+            }
+          }
+        });
+
+        final Bundle parameters = new Bundle();
+        parameters.putString("fields", "name,email,id");
+        request.setParameters(parameters);
+        request.executeAsync();
       }
 
       @Override

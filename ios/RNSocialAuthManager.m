@@ -67,7 +67,7 @@ RCT_EXPORT_METHOD(getFacebookCredentials:(NSArray*)permissions
                   callback:(RCTResponseSenderBlock)callback)
 {
     FBSDKLoginManager *loginManager = [[FBSDKLoginManager alloc] init];
-    
+
     void (^handler)(FBSDKLoginManagerLoginResult *loginResult, NSError *error) = ^(FBSDKLoginManagerLoginResult *loginResult, NSError *error) {
         if (error) {
             callback(@[
@@ -87,11 +87,11 @@ RCT_EXPORT_METHOD(getFacebookCredentials:(NSArray*)permissions
                                @"message": @"Credentials request was canceled"
                                },
                            [NSNull null]]);
-                
+
                 return;
-                
+
             }
-            
+
             if ([permissionsType isEqualToString:@"write"] && ![[FBSDKAccessToken currentAccessToken] hasGranted:@"publish_actions"]) {
                 callback(@[
                            @{
@@ -100,15 +100,29 @@ RCT_EXPORT_METHOD(getFacebookCredentials:(NSArray*)permissions
                                @"message": @"Requested write permissions wasn't granted"
                                },
                            [NSNull null]]);
-                
+
                 return;
             }
-            
-            callback(@[[NSNull null], @{
-                           @"userId": [FBSDKAccessToken currentAccessToken].userID,
-                           @"accessToken": [FBSDKAccessToken currentAccessToken].tokenString,
-                           @"hasWritePermissions": @([[FBSDKAccessToken currentAccessToken] hasGranted:@"publish_actions"]),
-                           }]);
+
+            //Graph Request
+            if ([FBSDKAccessToken currentAccessToken]) {
+              [[[FBSDKGraphRequest alloc] initWithGraphPath:@"me" parameters:@{@"fields": @"name,email,id"}]
+                  startWithCompletionHandler:^(FBSDKGraphRequestConnection *connection, id result, NSError *error) {
+                if (!error) {
+                  NSLog(@"fetched user:%@", result);
+                  callback(@[[NSNull null], @{
+                     @"id": result[@"id"],
+                     @"name": result[@"name"],
+                     @"email": result[@"email"],
+                     @"userId": [FBSDKAccessToken currentAccessToken].userID,
+                     @"accessToken": [FBSDKAccessToken currentAccessToken].tokenString,
+                     @"hasWritePermissions": @([[FBSDKAccessToken currentAccessToken] hasGranted:@"publish_actions"]),
+                  }]);
+                } else {
+                  callback(@[@{@"code": @(error.code), @"cancelled": @NO, @"message": error.localizedDescription }, [NSNull null]]);
+                }
+              }];
+            }
         }
     };
 
@@ -126,9 +140,9 @@ RCT_EXPORT_METHOD(getTwitterSystemAccounts:(RCTResponseSenderBlock)callback)
 {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         ACAccountStore *accountStore = [[ACAccountStore alloc] init];
-        
+
         ACAccountType *twAccountType = [accountStore accountTypeWithAccountTypeIdentifier:ACAccountTypeIdentifierTwitter];
-        
+
         [accountStore requestAccessToAccountsWithType:twAccountType options:nil completion:^(BOOL granted, NSError *error) {
             if (error) {
                 callback(@[
@@ -137,26 +151,26 @@ RCT_EXPORT_METHOD(getTwitterSystemAccounts:(RCTResponseSenderBlock)callback)
                                @"message": error.localizedDescription,
                                },
                            [NSNull null]]);
-                
+
                 return;
             }
-            
+
             if (granted) {
                 NSArray *twAccounts = [accountStore accountsWithAccountType:twAccountType];
-                
+
                 if ([twAccounts count]) {
                     ACAccount *account;
-                    
+
                     NSMutableArray *accounts = [[NSMutableArray alloc] init];
-                    
+
                     for (int i = 0; i < [twAccounts count]; i++) {
                         account = [twAccounts objectAtIndex:i];
-                        
+
                         [accounts addObject:@{
                                               @"userName": account.username
                                               }];
                     }
-                    
+
                     callback(@[[NSNull null], accounts]);
                 }
                 else {
@@ -181,7 +195,7 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
                   callback:(RCTResponseSenderBlock)callback) {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         ACAccountStore *accountStore = [[ACAccountStore alloc] init];
-        
+
         ACAccountType *twitterAccountType = [accountStore accountTypeWithAccountTypeIdentifier:ACAccountTypeIdentifierTwitter];
 
         [accountStore requestAccessToAccountsWithType:twitterAccountType options:nil completion:^(BOOL granted, NSError *error) {
@@ -192,37 +206,37 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
                                @"message": error.localizedDescription,
                                },
                            [NSNull null]]);
-                
+
                 return;
             }
-            
+
             if (granted) {
                 // If access granted, then get the Twitter account and try get tokens
                 NSArray *accounts = [accountStore accountsWithAccountType:twitterAccountType];
-                
+
                 ACAccount *twitterAccount;
-                
+
                 for (int i = 0; i < [accounts count]; i++) {
                     ACAccount *account = [accounts objectAtIndex:i];
-                    
+
                     if ([account.username isEqualToString:userName]) {
                         twitterAccount = account;
                     }
                 }
-                
+
                 NSString *reverseAuthResponseString = @"";
-                
+
                 // Auth using key and secret  !!! IT'S NOT SAFE because secret exists in the app code!!!
                 if ([twitterAppConsumerKey length] != 0 && [twitterAppConsumerSecret length] != 0) {
                     // OAuth parameters
                     NSString *oauthNonce = [[self class] randomAlphanumericStringWithLength:20];
-                    
+
                     NSString *oauthSignatureMethod = [NSString stringWithFormat:@"HMAC-SHA1"];
-                    
+
                     time_t oauthTimeStamp = (time_t) [[NSDate date] timeIntervalSince1970];
-                    
+
                     NSString *baseStr = @"";
-                    
+
                     // generating signature param
                     baseStr = [baseStr stringByAppendingFormat:@"oauth_consumer_key=%@&",twitterAppConsumerKey];
                     baseStr = [baseStr stringByAppendingFormat:@"oauth_nonce=%@&",oauthNonce];
@@ -230,11 +244,11 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
                     baseStr = [baseStr stringByAppendingFormat:@"oauth_timestamp=%ld&",oauthTimeStamp];
                     baseStr = [baseStr stringByAppendingFormat:@"oauth_version=1.0&"];
                     baseStr = [baseStr stringByAppendingFormat:@"x_auth_mode=reverse_auth"];
-                    
+
                     baseStr = [NSString stringWithFormat:@"POST&%@&%@",[[self class] percentDecodeString:@"https://api.twitter.com/oauth/request_token"],[[self class] percentDecodeString:baseStr]];
-                    
+
                     NSString *oauthSignature = [[self class] percentDecodeString:[[self class] hmacsha1:baseStr withKey:[NSString stringWithFormat:@"%@&", twitterAppConsumerSecret]]];
-                    
+
                     // prepare request header
                     NSString *oauthString = @"OAuth ";
                     oauthString = [oauthString stringByAppendingFormat:@"oauth_consumer_key=\"%@\"",twitterAppConsumerKey];
@@ -243,19 +257,19 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
                     oauthString = [oauthString stringByAppendingFormat:@",oauth_timestamp=\"%ld\"",oauthTimeStamp];
                     oauthString = [oauthString stringByAppendingFormat:@",oauth_nonce=\"%@\"",oauthNonce];
                     oauthString = [oauthString stringByAppendingFormat:@",oauth_version=\"1.0\""];
-                    
+
                     NSURL *requestTokenUrl = [NSURL URLWithString:@"https://api.twitter.com/oauth/request_token"];
-                    
+
                     NSMutableURLRequest *request = [[NSMutableURLRequest alloc]initWithURL:requestTokenUrl];
-                    
+
                     request.HTTPMethod = @"POST";
-                    
+
                     [request setValue:oauthString forHTTPHeaderField:@"Authorization"];
-                    
+
                     request.HTTPBody = [@"x_auth_mode=reverse_auth" dataUsingEncoding:NSUTF8StringEncoding];
-                    
+
                     NSData *urlData = [[self class] requestSynchronousData:request];
-                    
+
                     reverseAuthResponseString = [[NSString alloc] initWithData:urlData encoding:NSUTF8StringEncoding];
                 }
                 else {
@@ -267,44 +281,44 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
                                        @"code": @0,
                                        @"message": @"Twitter's app consumer key and secret not found"
                                        }, [NSNull null]]);
-                        
+
                         return;
                     }
                 }
-                
+
                 // STEP TWO (access token)
                 NSDictionary *accessTokenRequestParams = [[NSMutableDictionary alloc] init];
-                
+
                 __block NSString *twitterAppConsumerKeyStr = twitterAppConsumerKey;
-                
+
                 if ([twitterAppConsumerKeyStr length] == 0) {
                     NSRegularExpression *regex = [[NSRegularExpression alloc] initWithPattern:@"oauth_consumer_key=\"(.*?)\"" options:0 error:nil];
-                    
+
                     [regex enumerateMatchesInString:reverseAuthResponseString options:0 range:NSMakeRange(0, [reverseAuthResponseString length]) usingBlock:^(NSTextCheckingResult *result, NSMatchingFlags flags, BOOL *stop) {
                         NSRange range = [result rangeAtIndex:1];
                         NSString *found = [reverseAuthResponseString substringWithRange:range];
-                        
+
                         twitterAppConsumerKeyStr = found;
                     }];
                 }
-                
+
                 if ([twitterAppConsumerKeyStr length] != 0) {
                     [accessTokenRequestParams setValue:twitterAppConsumerKeyStr forKey:@"x_reverse_auth_target"];
-                    
+
                     [accessTokenRequestParams setValue:reverseAuthResponseString forKey:@"x_reverse_auth_parameters"];
-                    
+
                     NSURL *accessTokenUrl = [NSURL URLWithString:@"https://api.twitter.com/oauth/access_token"];
-                    
+
                     SLRequest *accessTokenRequest = [SLRequest requestForServiceType:SLServiceTypeTwitter
                                                                        requestMethod:SLRequestMethodPOST
                                                                                  URL:accessTokenUrl
                                                                           parameters:accessTokenRequestParams];
-                    
+
                     [accessTokenRequest setAccount:twitterAccount];
-                    
+
                     // execute the request
                     [accessTokenRequest performRequestWithHandler:^(NSData *responseData, NSHTTPURLResponse *urlResponse, NSError *error) {
-                        
+
                         if (error || [urlResponse statusCode] != 200 ) {
                             if (error) {
                                 callback(@[@{
@@ -320,9 +334,9 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
                         }
                         else {
                             NSString *responseStr = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
-                            
+
                             NSDictionary *paramsInResponse = [[self class] parseQueryString:responseStr];
-                            
+
                             callback(@[[NSNull null], @{
                                            @"oauthToken": [paramsInResponse objectForKey:@"oauth_token"],
                                            @"oauthTokenSecret": [paramsInResponse objectForKey:@"oauth_token_secret"],
@@ -381,7 +395,7 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
     NSCharacterSet * queryKVSet = [NSCharacterSet
                                    characterSetWithCharactersInString:@"!*'();:@&=+$,/?%#[]"
                                    ].invertedSet;
-    
+
     return [string stringByAddingPercentEncodingWithAllowedCharacters:queryKVSet];
 }
 
@@ -410,7 +424,7 @@ RCT_EXPORT_METHOD(getTwitterCredentials:(NSString *)userName
             NSLog(@"%@", error);
         }
         dispatch_semaphore_signal(semaphore);
-        
+
     }];
     [dataTask resume];
     dispatch_semaphore_wait(semaphore, DISPATCH_TIME_FOREVER);
